@@ -62,9 +62,9 @@
                   'source-directory': 'build',
                   'destination-github-username': 'congatudo-bot',
                   'destination-repository-name': 'congatudo-nightly',
-                  'destination-repository-username': 'congatudo',
-                  'user-email': 'congatudo@congatudo.cloud',
-                  'target-branch': 'master'
+                  'destination-repository-username': 'knuspel',
+                  'user-email': 'github@knuspel.de',
+                  'target-branch': 'main'
                 }
               }
             ],
