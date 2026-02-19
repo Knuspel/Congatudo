@@ -88,8 +88,13 @@ const DEVICE_ERROR_TO_DESCRIPTION = {
     [DeviceError.VALUE.WHEEL_UP]: "Wheel lifted. Place the robot on the floor.",
 };
 const TRANSIENT_CONNECTION_WARNING_LOG_INTERVAL_MS = 30 * 1000;
+const CONSUMABLES_TIMEOUT_WARNING_LOG_INTERVAL_MS = 30 * 1000;
+const CONSUMABLES_TIMEOUT_COOLDOWN_MS = 5 * 60 * 1000;
 const SEND_RECV_TIMEOUT_RETRY_DELAY_MS = 250;
 const SEND_RECV_WRAPPED_FLAG = Symbol("congatudo_send_recv_wrapped");
+const GET_CONSUMABLES_WRAPPED_FLAG = Symbol("congatudo_get_consumables_wrapped");
+const CONSUMABLES_PARAM_REQ_OP = "DEVICE_MAPID_GET_CONSUMABLES_PARAM_REQ";
+const CONSUMABLES_PARAM_RSP_OP = "DEVICE_MAPID_GET_CONSUMABLES_PARAM_RSP";
 
 function throttle(callback, wait = 1000, immediate = true) {
     let timeout = null;
@@ -121,6 +126,10 @@ module.exports = class CecotecCongaRobot extends ValetudoRobot {
         this.server = new CloudServer();
         this.lastTransientConnectionWarningTimestamp = 0;
         this.suppressedTransientConnectionWarnings = 0;
+        this.lastConsumablesTimeoutWarningTimestamp = 0;
+        this.suppressedConsumablesTimeoutWarnings = 0;
+        this.consumablesTimeoutCooldownUntil = 0;
+        this.loggedConsumablesPollingDisabled = false;
         this.emitStateUpdated = throttle(this.emitStateUpdated.bind(this));
         this.emitStateAttributesUpdated = throttle(
             this.emitStateAttributesUpdated.bind(this)
@@ -321,12 +330,43 @@ module.exports = class CecotecCongaRobot extends ValetudoRobot {
         }
     }
 
+    logRateLimitedConsumablesTimeoutWarning(sendOPName, recvOPName) {
+        const now = Date.now();
+
+        if (now - this.lastConsumablesTimeoutWarningTimestamp >= CONSUMABLES_TIMEOUT_WARNING_LOG_INTERVAL_MS) {
+            Logger.warn(`Timeout waiting for '${recvOPName}' after sending '${sendOPName}'. Skipping consumables refresh.`, {
+                suppressedSinceLastLog: this.suppressedConsumablesTimeoutWarnings
+            });
+
+            this.lastConsumablesTimeoutWarningTimestamp = now;
+            this.suppressedConsumablesTimeoutWarnings = 0;
+        } else {
+            this.suppressedConsumablesTimeoutWarnings++;
+        }
+    }
+
     /**
      * @param {any} err
      * @returns {boolean}
      */
     isSendRecvTimeoutError(err) {
         return typeof err?.message === "string" && err.message.startsWith("Timeout waiting for response from opcode ");
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    isConsumablesPollingDisabled() {
+        return this.config.get("robot")?.implementationSpecificConfig?.disableConsumablesPolling === true;
+    }
+
+    logConsumablesPollingDisabledWarning() {
+        if (this.loggedConsumablesPollingDisabled === true) {
+            return;
+        }
+
+        Logger.warn("Consumables polling disabled via config. Returning cached consumables only.");
+        this.loggedConsumablesPollingDisabled = true;
     }
 
     /**
@@ -349,6 +389,10 @@ module.exports = class CecotecCongaRobot extends ValetudoRobot {
                     throw e;
                 }
 
+                if (recvOPName === CONSUMABLES_PARAM_RSP_OP) {
+                    throw e;
+                }
+
                 Logger.warn(`Timeout waiting for '${recvOPName}' after sending '${sendOPName}'. Retrying once.`);
                 await sleep(SEND_RECV_TIMEOUT_RETRY_DELAY_MS);
 
@@ -360,11 +404,54 @@ module.exports = class CecotecCongaRobot extends ValetudoRobot {
     }
 
     /**
+     * Guard consumables polling on older firmware that never responds.
+     *
+     * @param {import("@agnoc/core").Robot} robot
+     */
+    wrapRobotGetConsumables(robot) {
+        if (robot[GET_CONSUMABLES_WRAPPED_FLAG] === true) {
+            return;
+        }
+
+        const originalGetConsumables = robot.getConsumables?.bind(robot);
+        if (typeof originalGetConsumables !== "function") {
+            robot[GET_CONSUMABLES_WRAPPED_FLAG] = true;
+            return;
+        }
+
+        robot.getConsumables = async () => {
+            if (this.isConsumablesPollingDisabled()) {
+                this.logConsumablesPollingDisabledWarning();
+                return robot.device?.consumables ?? [];
+            }
+
+            if (Date.now() < this.consumablesTimeoutCooldownUntil) {
+                return robot.device?.consumables ?? [];
+            }
+
+            try {
+                return await originalGetConsumables();
+            } catch (e) {
+                if (this.isSendRecvTimeoutError(e)) {
+                    this.logRateLimitedConsumablesTimeoutWarning(CONSUMABLES_PARAM_REQ_OP, CONSUMABLES_PARAM_RSP_OP);
+                    this.consumablesTimeoutCooldownUntil = Date.now() + CONSUMABLES_TIMEOUT_COOLDOWN_MS;
+                    return robot.device?.consumables ?? [];
+                }
+
+                throw e;
+            }
+        };
+
+        robot[GET_CONSUMABLES_WRAPPED_FLAG] = true;
+    }
+
+    /**
      * @param {import("@agnoc/core").Robot} robot
      */
     onAddRobot(robot) {
         Logger.info(`Added new robot with id '${robot.device.id}'`);
         this.wrapRobotSendRecv(robot);
+        this.wrapRobotGetConsumables(robot);
 
         robot.on("updateDevice", () => {
             return this.onUpdateDevice(robot);
