@@ -35,11 +35,9 @@ class InLineHassComponent extends HassComponent {
      * @return {{[key: string]: any}}
      */
     getAutoconf() {
-        const objectId = `${this.hass.objectId}_${this.friendlyName.toLowerCase().replace(/ /g, "_")}`;
-
         return Object.assign(this.autoconf, {
             name: this.friendlyName,
-            default_entity_id: `${this.componentType}.${objectId}`
+            default_entity_id: `${this.hass.objectId}_${this.friendlyName.toLowerCase().replace(/ /g, "_")}`
         });
     }
 
