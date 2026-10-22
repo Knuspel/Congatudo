@@ -24,8 +24,8 @@ ARG GIT_REPO=congatudo/Congatudo
 ARG GIT_REF=master
 ARG GIT_CACHEBUST=0
 
-# Force cache invalidation
-RUN echo "${GIT_CACHEBUST}" > /usr/src/version.json
+# Force cache invalidation (the args above bust the clone layer whenever CI builds a new ref)
+RUN echo "${GIT_CACHEBUST}" > /tmp/version.json
 
 # Download valetudo
 RUN git clone --depth 1 --branch "${GIT_REF}" https://github.com/${GIT_REPO} --single-branch . && \
