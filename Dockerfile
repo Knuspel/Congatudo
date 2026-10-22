@@ -21,7 +21,7 @@ WORKDIR /usr/src/app
 # CI passes the ref that triggered the build. Changing any of the args below
 # invalidates the cache exactly like the previously used dynamic ADD did.
 ARG GIT_REPO=congatudo/Congatudo
-ARG GIT_REF=master
+ARG GIT_REF=main-congatudo-changes
 ARG GIT_CACHEBUST=0
 
 # Force cache invalidation (the args above bust the clone layer whenever CI builds a new ref)

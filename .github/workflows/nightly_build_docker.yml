@@ -58,7 +58,7 @@ jobs:
             "PKG_OPTIONS=${{ matrix.pkg_options }}"
             "BUILD_PLATFORM=${{ matrix.platform }}"
             "GIT_REPO=${{ github.repository }}"
-            "GIT_REF=${{ github.ref_name }}"
+            "GIT_REF=main-congatudo-changes"
             "GIT_CACHEBUST=${{ github.run_number }}"
       - name: Push
         run: |
