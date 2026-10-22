@@ -1,7 +1,7 @@
 # Stage 1
 ARG BUILD_FROM=amd64/alpine:3.18
 ARG BUILD_PLATFORM=linux/amd64
-FROM node:20-alpine AS build_image
+FROM node:24-alpine AS build_image
 
 # Install dependencies
 RUN apk update && \
@@ -45,7 +45,7 @@ RUN npm run build_openapi_schema
 RUN npm run build --workspace=frontend
 
 # Build args
-ARG PKG_TARGET=node20-linuxstatic-x64
+ARG PKG_TARGET=node24-linuxstatic-x64
 ARG PKG_OPTIONS=expose-gc,max-heap-size=64
 
 # Build binary
