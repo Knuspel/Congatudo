@@ -672,22 +672,23 @@ class MqttController {
 
 
         try {
-            for (const topic of Object.keys(topics)) {
-                // @ts-ignore
-                await this.asyncClient.subscribe({
-                    [topic]: {
-                        qos: MqttCommonAttributes.QOS.AT_LEAST_ONCE
-                    },
-                    /*
-                        The resubscribe option is undocumented and thus may break in the future (2022-08-21)
-                        It works around this bug(?): https://github.com/mqttjs/MQTT.js/issues/895
+            /*
+                All interesting topics are sent in one SUBSCRIBE packet with the same per-topic behavior
+                (qos, resubscribe) as the previous per-topic loop.
+             */
+            // @ts-ignore
+            await this.asyncClient.subscribe(Object.assign(Object.fromEntries(Object.keys(topics).map((topic) => {
+                return [topic, {qos: MqttCommonAttributes.QOS.AT_LEAST_ONCE}];
+            })), {
+                /*
+                    The resubscribe option is undocumented and thus may break in the future (2022-08-21)
+                    It works around this bug(?): https://github.com/mqttjs/MQTT.js/issues/895
 
-                        According to https://github.com/mqttjs/MQTT.js/issues/749#issuecomment-1002481265, using MQTTv5 also fixes the issue
-                        We should revisit this when MQTTv5 support is stable and well-established
-                     */
-                    resubscribe: true
-                });
-            }
+                    According to https://github.com/mqttjs/MQTT.js/issues/749#issuecomment-1002481265, using MQTTv5 also fixes the issue
+                    We should revisit this when MQTTv5 support is stable and well-established
+                 */
+                resubscribe: true
+            }));
         } catch (e) {
             if (e.message !== "client disconnecting" && e.message !== "connection closed") {
                 throw e;
