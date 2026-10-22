@@ -5,6 +5,7 @@ on:
     - cron: '22 1 * * *'
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: knuspel/congatudo-nightly
 jobs:
   matrix:
     runs-on: ubuntu-latest
@@ -48,7 +49,7 @@ jobs:
           push: false
           load: true
           tags: |
-            ${{ env.REGISTRY }}/congatudo/congatudo-nightly:${{ matrix.image_name }}-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.image_name }}-latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new
           build-args: |
@@ -56,9 +57,12 @@ jobs:
             "PKG_TARGET=${{ matrix.pkg_target }}"
             "PKG_OPTIONS=${{ matrix.pkg_options }}"
             "BUILD_PLATFORM=${{ matrix.platform }}"
+            "GIT_REPO=${{ github.repository }}"
+            "GIT_REF=${{ github.ref_name }}"
+            "GIT_CACHEBUST=${{ github.run_number }}"
       - name: Push
         run: |
-          docker push ${{ env.REGISTRY }}/congatudo/congatudo-nightly:${{ matrix.image_name }}-latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.image_name }}-latest
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
@@ -79,17 +83,17 @@ jobs:
       - name: Create manifest
         run: |
           # TODO: Use matrix here.
-          docker manifest create ${{ env.REGISTRY }}/congatudo/congatudo-nightly:alpine-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:alpine-armv7-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:alpine-aarch64-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:alpine-amd64-latest
-          docker manifest create ${{ env.REGISTRY }}/congatudo/congatudo-nightly:homeassistant-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:homeassistant-armhf-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:homeassistant-armv7-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:homeassistant-aarch64-latest \
-            --amend ${{ env.REGISTRY }}/congatudo/congatudo-nightly:homeassistant-amd64-latest
+          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:alpine-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:alpine-armv7-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:alpine-aarch64-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:alpine-amd64-latest
+          docker manifest create ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:homeassistant-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:homeassistant-armhf-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:homeassistant-armv7-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:homeassistant-aarch64-latest \
+            --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:homeassistant-amd64-latest
       - name: Push manifest
         run: |
           # TODO: Use matrix here.
-          docker manifest push ${{ env.REGISTRY }}/congatudo/congatudo-nightly:alpine-latest
-          docker manifest push ${{ env.REGISTRY }}/congatudo/congatudo-nightly:homeassistant-latest
+          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:alpine-latest
+          docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:homeassistant-latest

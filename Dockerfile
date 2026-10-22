@@ -17,11 +17,19 @@ USER node:node
 # Working directory
 WORKDIR /usr/src/app
 
+# Source repository to build from. GIT_REF may be a branch name or a tag.
+# CI passes the ref that triggered the build. Changing any of the args below
+# invalidates the cache exactly like the previously used dynamic ADD did.
+ARG GIT_REPO=congatudo/Congatudo
+ARG GIT_REF=master
+ARG GIT_CACHEBUST=0
+
 # Force cache invalidation
-ADD https://api.github.com/repos/congatudo/Congatudo/git/refs/heads/master /usr/src/version.json
+RUN echo "${GIT_CACHEBUST}" > /usr/src/version.json
 
 # Download valetudo
-RUN git clone --depth 1 https://github.com/congatudo/Congatudo --single-branch .
+RUN git clone --depth 1 --branch "${GIT_REF}" https://github.com/${GIT_REPO} --single-branch . && \
+  (git rev-parse --verify refs/heads/master >/dev/null 2>&1 || git switch -c master)
 
 # Build environment
 ENV NODE_ENV=production
