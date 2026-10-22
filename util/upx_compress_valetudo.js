@@ -1,92 +1,105 @@
 /* eslint-disable */
 const fs = require("fs");
+const path = require("path");
 const UPX = require("upx");
 
-const binaries = {
-    armv7: {
-        base: "./build_dependencies/pkg/v3.5/built-v20.10.0-linuxstatic-armv7",
-        built: "./build/armv7/valetudo",
-        out: "./build/armv7/valetudo.upx",
-        upx: UPX({
-            //ultraBrute: true // Disabled for now (2022-05-07) due to performance issues with the latest upx devel
-
-            // instead of ultraBrute, this also works okay-ish
-            lzma: true,
-            best: true
-        })
-    },
-    armv7_lowmem: {
-        base: "./build_dependencies/pkg/v3.5/built-v20.10.0-linuxstatic-armv7",
-        built: "./build/armv7/valetudo-lowmem",
-        out: "./build/armv7/valetudo-lowmem.upx",
-        upx: UPX({
-            //ultraBrute: true // Disabled for now (2022-05-07) due to performance issues with the latest upx devel
-
-            // instead of ultraBrute, this also works okay-ish
-            lzma: true,
-            best: true
-        })
-    },
-    aarch64: {
-        base: "./build_dependencies/pkg/v3.5/built-v20.10.0-linuxstatic-arm64",
-        built: "./build/aarch64/valetudo",
-        out: "./build/aarch64/valetudo.upx",
-        upx: UPX({
-            //ultraBrute: true // Disabled for now (2022-05-07) due to performance issues with the latest upx devel
-
-            // instead of ultraBrute, this also works okay-ish
-            lzma: true,
-            best: true
-        })
-    },
-    amd64: {
-        base: "./build_dependencies/pkg/v3.5/built-v20.10.0-linuxstatic-x64",
-        built: "./build/amd64/valetudo",
-        out: "./build/amd64/valetudo.upx",
-        upx: UPX({
-            //ultraBrute: true // Disabled for now (2022-05-07) due to performance issues with the latest upx devel
-
-            // instead of ultraBrute, this also works okay-ish
-            lzma: true,
-            best: true
-        })
-    }
+// Cache file suffixes of the base runtimes pkg worked from, per flavor.
+// pkg no longer keeps "built-" copies around in newer versions, so both
+// naming schemes are accepted.
+const flavorCacheSuffixes = {
+    armv7: "linuxstatic-armv7",
+    armv7_lowmem: "linuxstatic-armv7",
+    aarch64: "linuxstatic-arm64",
+    amd64: "linuxstatic-x64"
 };
 
 /**
- * There is absolutely no error handling in here. Great :)
- *
- * Note that this only works with patched base binaries
+ * Finds the base runtime pkg fetched for a flavor inside PKG_CACHE_PATH.
+ * The relevant part of that file is its file size: pkg appends its payload
+ * right after the (in-place patched) runtime, so slicing at that size
+ * separates the two.
  */
-console.log("Starting UPX compression");
+function findBaseForFlavor(flavor) {
+    const pkgRoot = "./build_dependencies/pkg";
+    const suffix = flavorCacheSuffixes[flavor];
 
-Object.values(binaries).forEach(async (b,i) => {
-    console.log("Compressing " + b.built);
-    const name = Object.keys(binaries)[i];
+    if (!fs.existsSync(pkgRoot)) {
+        throw new Error("PKG_CACHE_PATH does not exist. Did the pkg builds run first?");
+    }
 
-    console.time(name);
+    const candidates = [];
+    for (const versionDir of fs.readdirSync(pkgRoot).sort().reverse()) {
+        const versionDirPath = path.join(pkgRoot, versionDir);
+        if (!fs.statSync(versionDirPath).isDirectory()) {
+            continue;
+        }
 
-    const baseSize = fs.readFileSync(b.base).length;
-    const built = fs.readFileSync(b.built);
+        const files = fs.readdirSync(versionDirPath).filter((file) => {
+            return file.endsWith(suffix) && (file.startsWith("built-") || file.startsWith("fetched-"));
+        });
 
-    const runtime = built.subarray(0, baseSize);
-    const payload = built.subarray(baseSize);
+        if (files.length === 0) {
+            continue;
+        }
 
-    // UPX will reject files without the executable bit on linux. Also, default mode is 666
-    fs.writeFileSync(b.out + "_runtime", runtime, {mode: 0o777});
+        // Prefer built- runtimes (needed by pkg 5 / already cut out by 6) over fetched-, exactly
+        // as pkg itself used them during the build in this very cache version directory only
+        const builtFile = files.find((file) => file.startsWith("built-"));
 
-    const upxResult = await b.upx(b.out + "_runtime").start();
+        candidates.push(path.join(versionDirPath, builtFile ?? files[0]));
+    }
 
-    console.log("Compressed " + b.built + " from " + upxResult.fileSize.before + " to " + upxResult.fileSize.after + ". Ratio: " + upxResult.ratio);
+    if (candidates.length === 0) {
+        throw new Error("Could not find a pkg base runtime for flavor " + suffix + ". Did the pkg build for it run first?");
+    }
 
-    const compressedRuntime = fs.readFileSync(b.out + "_runtime");
-    fs.unlinkSync(b.out + "_runtime");
+    // The newest cache version directory wins
+    return candidates[0];
+}
 
-    const fullNewBinary = Buffer.concat([compressedRuntime, payload]);
+async function run() {
+    console.log("Starting UPX compression");
 
-    fs.writeFileSync(b.out, fullNewBinary, {mode: 0o777});
+    for (const [name, built, out] of [
+        ["armv7", "./build/armv7/valetudo", "./build/armv7/valetudo.upx"],
+        ["armv7_lowmem", "./build/armv7/valetudo-lowmem", "./build/armv7/valetudo-lowmem.upx"],
+        ["aarch64", "./build/aarch64/valetudo", "./build/aarch64/valetudo.upx"],
+        ["amd64", "./build/amd64/valetudo", "./build/amd64/valetudo.upx"]
+    ]) {
+        console.log("Compressing " + built);
 
-    console.log("Successfully wrote " + b.out);
-    console.timeEnd(name);
+        const base = findBaseForFlavor(name);
+
+        console.time(name);
+
+        const baseSize = fs.readFileSync(base).length;
+        const builtFile = fs.readFileSync(built);
+
+        if (builtFile.length <= baseSize) {
+            throw new Error("Built binary " + built + " is not larger than its base runtime - cannot be split");
+        }
+
+        const runtime = builtFile.subarray(0, baseSize);
+        const payload = builtFile.subarray(baseSize);
+
+        // UPX will reject files without the executable bit on linux. Also, default mode is 666
+        fs.writeFileSync(out + "_runtime", runtime, {mode: 0o777});
+
+        const upxResult = await UPX({lzma: true, best: true})(out + "_runtime").start();
+
+        console.log("Compressed " + built + " from " + upxResult.fileSize.before + " to " + upxResult.fileSize.after + ". Ratio: " + upxResult.ratio);
+
+        const compressedRuntime = fs.readFileSync(out + "_runtime");
+        fs.unlinkSync(out + "_runtime");
+
+        fs.writeFileSync(out, Buffer.concat([compressedRuntime, payload]), {mode: 0o777});
+
+        console.log("Successfully wrote " + out);
+        console.timeEnd(name);
+    }
+}
+
+run().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
 });
-
