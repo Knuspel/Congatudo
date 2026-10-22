@@ -236,13 +236,9 @@ class MqttHandle {
     async refresh() {
         await this.controller.refresh(this);
 
-        for (const child of this.children) {
-            await child.refresh();
-        }
+        await Promise.all(this.children.map((child) => child.refresh()));
 
-        for (const component of this.hassComponents) {
-            await component.refresh();
-        }
+        await Promise.all(this.hassComponents.map((component) => component.refresh()));
     }
 
     /**
