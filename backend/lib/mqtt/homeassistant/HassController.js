@@ -189,14 +189,14 @@ class HassController {
     async refresh(component, topics) {
         const base = component.getBaseTopic();
 
-        for (const [topic, payload] of Object.entries(topics)) {
-            await this.controller.publishHass(
+        await Promise.all(Object.entries(topics).map(([topic, payload]) => {
+            return this.controller.publishHass(
                 topic === "" ? base : base + "/" + topic,
                 // @ts-ignore
                 (payload instanceof String || payload instanceof Buffer) ? payload : JSON.stringify(payload),
                 {qos: this.qos, retain: true}
             );
-        }
+        }));
     }
 
     /**
